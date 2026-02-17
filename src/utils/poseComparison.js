@@ -332,17 +332,19 @@ function computeMotion(featureSeq) {
 }
 
 /**
- * Apply motion penalty when the user barely moves.
- * If user motion is less than 30% of reference motion, scale down the score.
- * Penalty ramps linearly: 0% motion = score * 0.15, 30% motion = no penalty.
+ * Apply motion penalty with hard score caps.
+ * Standing still must always result in "Let's Try Again" tier (0-24).
+ *
+ *   ratio < 30%  -> score capped at 20  (Let's Try Again)
+ *   ratio 30-50% -> score capped at 45  (Good Try at best)
+ *   ratio >= 50% -> no cap, normal score
  */
 function applyMotionPenalty(score, liveMotion, refMotion) {
   if (refMotion < 0.01) return score;
   const ratio = liveMotion / refMotion;
-  if (ratio >= 0.3) return score;
-  // Linear scale: ratio 0 -> 0.15, ratio 0.3 -> 1.0
-  const scale = 0.15 + (ratio / 0.3) * 0.85;
-  return Math.round(score * scale);
+  if (ratio < 0.3) return Math.min(score, 20);
+  if (ratio < 0.5) return Math.min(score, 45);
+  return score;
 }
 
 // ===========================================================
@@ -431,7 +433,7 @@ export function compareDTW(liveFrames, refFrames) {
   const motionRatio = refMotion > 0.01 ? liveMotion / refMotion : 1;
   const rawScore = best.score;
   const penalisedScore = applyMotionPenalty(rawScore, liveMotion, refMotion);
-  const lowMotion = motionRatio < 0.3;
+  const lowMotion = motionRatio < 0.5;
 
   console.log(`DTW scores: original=${resultOriginal.score}, mirrored=${resultMirrored.score}, using=${useMirrored ? 'mirrored' : 'original'}`);
   console.log(`Motion: live=${liveMotion.toFixed(2)}, ref=${refMotion.toFixed(2)}, ratio=${motionRatio.toFixed(2)}, raw=${rawScore}, final=${penalisedScore}`);
