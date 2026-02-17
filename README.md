@@ -96,6 +96,6 @@ These license terms apply only to the video content, not to the application sour
 ## Acknowledgements
 
 - [Auslan Signbank](https://auslan.org.au/) (Macquarie University / Monash University) for sign language video resources
-- [QUT Inclusive Technologies Group](https://research.qut.edu.au/inclusivetech/) for research support
+- [QUT Inclusive Technologies Group](https://research.qut.edu.au/dplab/research/inclusive-technologies-for-people-of-diverse-cognitive-abilities/) for research support
 - [Endeavour Foundation](https://endeavour.com.au/) for collaboration and user testing
 - [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) by Google for pose and hand tracking models
