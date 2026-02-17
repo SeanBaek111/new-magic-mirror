@@ -22,6 +22,7 @@ export default function MagicMirror({ word, onBack }) {
   const [practiceTime, setPracticeTime] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [bestScore, setBestScore] = useState(0);
+  const [prevBestScore, setPrevBestScore] = useState(null);
   const [videoProgress, setVideoProgress] = useState(0);
   const [refData, setRefData] = useState(null);
   const [fps, setFps] = useState(0);
@@ -180,6 +181,7 @@ export default function MagicMirror({ word, onBack }) {
     setScore(dtwResult.score);
     setFeedback(fb);
     setAttempts((p) => p + 1);
+    setPrevBestScore(bestScore);
     setBestScore((p) => Math.max(p, dtwResult.score));
     setPhase(PHASE.FEEDBACK);
   }, [phase, refData]);
@@ -282,9 +284,29 @@ export default function MagicMirror({ word, onBack }) {
     }
   };
 
-  const getScoreColor = (s) => s >= 80 ? "#4ecdc4" : s >= 60 ? "#ffe66d" : "#ff6b6b";
-  const getScoreLabel = (s) => s >= 80 ? "Great job!" : s >= 60 ? "Good effort!" : "Keep practising!";
-  const getStars = (s) => s >= 85 ? 3 : s >= 70 ? 2 : s >= 50 ? 1 : 0;
+  // Tier-based feedback (no numeric score shown to users)
+  const getTier = (s) => {
+    if (s >= 75) return { emoji: "\u{1F31F}", label: "Amazing!", stars: 3, color: "#4ecdc4" };
+    if (s >= 50) return { emoji: "\u{1F44F}", label: "Well Done!", stars: 2, color: "#ffe66d" };
+    if (s >= 25) return { emoji: "\u{1F4AA}", label: "Good Try!", stars: 1, color: "#f0a86e" };
+    return { emoji: "\u{1F917}", label: "Let's Try Again!", stars: 0, color: "#e8a0bf" };
+  };
+
+  const getTierMessages = (s) => {
+    if (s >= 75) return ["Wonderful signing!", "You nailed it!", "Brilliant work!"];
+    if (s >= 50) return ["Great effort!", "You're getting there!", "Looking good!"];
+    if (s >= 25) return ["Nice try! Let's practise again!", "Good start, keep going!", "You're learning!"];
+    return ["Let's watch the video once more!", "Every try helps you learn!", "You can do it!"];
+  };
+
+  const getGrowthMessage = (currentScore) => {
+    if (attempts === 0) return "Great first try!";
+    if (prevBestScore === null || prevBestScore === 0) return null;
+    const improvement = currentScore - prevBestScore;
+    if (improvement >= 10) return "You're improving! \u{1F389}";
+    if (improvement >= 5) return "Even better than last time! \u2B06\uFE0F";
+    return null;
+  };
 
   const showCanvas = phase === PHASE.PRACTICE || phase === PHASE.COUNTDOWN;
   const showVideo = phase === PHASE.WATCH;
@@ -316,7 +338,7 @@ export default function MagicMirror({ word, onBack }) {
               {!mpLoading && !mpError && (
                 <button className="btn-primary" onClick={startWatch}>START</button>
               )}
-              {attempts > 0 && <div className="stats">Attempts: {attempts} · Best: {bestScore}%</div>}
+              {attempts > 0 && <div className="stats">Attempts: {attempts}</div>}
             </div>
           )}
 
@@ -356,25 +378,39 @@ export default function MagicMirror({ word, onBack }) {
           )}
 
           {/* FEEDBACK */}
-          {phase === PHASE.FEEDBACK && score !== null && (
-            <div className="overlay feedback">
-              <div className="stars">{"★".repeat(getStars(score))}{"☆".repeat(3 - getStars(score))}</div>
-              <div className="score" style={{ color: getScoreColor(score), textShadow: `0 0 30px ${getScoreColor(score)}44` }}>{score}%</div>
-              <div className="score-label" style={{ color: getScoreColor(score) }}>{getScoreLabel(score)}</div>
-              {feedback && feedback.tips.length > 0 && (
-                <div className="feedback-tips">
-                  {feedback.tips.map((tip, i) => (
-                    <div key={i} className="tip">{tip}</div>
-                  ))}
+          {phase === PHASE.FEEDBACK && score !== null && (() => {
+            const tier = getTier(score);
+            const messages = getTierMessages(score);
+            const tierMsg = messages[Math.floor(Math.random() * messages.length)];
+            const growthMsg = getGrowthMessage(score);
+            return (
+              <div className="overlay feedback">
+                <div className="feedback-emoji">{tier.emoji}</div>
+                <div className="stars" style={{ color: tier.color }}>
+                  {tier.stars > 0
+                    ? "\u2605".repeat(tier.stars) + "\u2606".repeat(3 - tier.stars)
+                    : "\u2764\uFE0F"}
                 </div>
-              )}
-              <div className="score-stats">Best: {bestScore}% · Attempt #{attempts}</div>
-              <div className="button-row">
-                <button className="btn-accent" onClick={retry}>TRY AGAIN</button>
-                <button className="btn-secondary" onClick={backToMenu}>MENU</button>
+                <div className="tier-label" style={{ color: tier.color }}>{tier.label}</div>
+                <div className="tier-message">{tierMsg}</div>
+                {growthMsg && (
+                  <div className="growth-badge">{growthMsg}</div>
+                )}
+                {feedback && feedback.tips.length > 0 && (
+                  <div className="feedback-tips">
+                    {feedback.tips.map((tip, i) => (
+                      <div key={i} className="tip">{tip}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="score-stats">Attempt #{attempts}</div>
+                <div className="button-row">
+                  <button className="btn-accent" onClick={retry}>TRY AGAIN</button>
+                  <button className="btn-secondary" onClick={backToMenu}>MENU</button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         <div className="mirror-footer">PROTOTYPE · INCLUSIVE TECHNOLOGIES GROUP · QUT</div>

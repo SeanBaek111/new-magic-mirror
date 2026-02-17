@@ -24,6 +24,9 @@
 // Constants
 // ===========================================================
 
+// Fixed feature vector length: 4 arm angles + 16 positions + 4 velocity + 15 right fingers + 15 left fingers = 54
+const FIXED_VECTOR_LENGTH = 54;
+
 // Hand finger joint angles: 3 angles per finger × 5 fingers = 15
 // Each entry: [joint_a, joint_b, joint_c] → angle at joint_b
 const FINGER_ANGLE_TRIPLETS = [
@@ -139,10 +142,15 @@ function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles) {
   const rightFingers = extractFingerAngles(rightHand);
   const leftFingers = extractFingerAngles(leftHand);
 
-  // Combined feature vector
+  // Combined feature vector (always FIXED_VECTOR_LENGTH = 54 dimensions)
+  // Layout: [4 arm angles, 16 positions, 4 velocity, 15 right fingers, 15 left fingers]
   const vector = [...armAngles, ...positions, ...velocity];
+  // Pad right finger slots (indices 24-38): use actual angles or zeros
   if (rightFingers) vector.push(...rightFingers);
+  else for (let i = 0; i < 15; i++) vector.push(0);
+  // Pad left finger slots (indices 39-53): use actual angles or zeros
   if (leftFingers) vector.push(...leftFingers);
+  else for (let i = 0; i < 15; i++) vector.push(0);
 
   return { armAngles, positions, velocity, rightFingers, leftFingers, vector };
 }
@@ -154,36 +162,45 @@ function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles) {
 /**
  * Weighted Euclidean distance between two feature vectors.
  * Different feature types have different scales, so we weight them.
+ *
+ * Weights tuned for realistic human variance:
+ *   - Arm angles (weight 2): natural variance ~0.2-0.3 rad, important but not over-penalised
+ *   - Positions (weight 1): normalised coordinates
+ *   - Velocity (weight 1.2): dynamics matter, but less than arm shape
+ *   - Finger angles (weight 1.5): handshape detail
  */
 function featureDistance(vecA, vecB) {
-  const minLen = Math.min(vecA.length, vecB.length);
-  if (minLen === 0) return 100;
-
+  const len = FIXED_VECTOR_LENGTH;
   let sum = 0;
-  for (let i = 0; i < minLen; i++) {
+  for (let i = 0; i < len; i++) {
     let weight = 1;
-    if (i < 4) weight = 3;          // arm angles: most important
+    if (i < 4) weight = 2;          // arm angles
     else if (i < 20) weight = 1;    // positions
-    else if (i < 24) weight = 2;    // velocity
+    else if (i < 24) weight = 1.2;  // velocity
     else weight = 1.5;              // finger angles
 
-    const diff = vecA[i] - vecB[i];
+    const a = i < vecA.length ? vecA[i] : 0;
+    const b = i < vecB.length ? vecB[i] : 0;
+    const diff = a - b;
     sum += weight * diff * diff;
   }
 
-  return Math.sqrt(sum / minLen);
+  return Math.sqrt(sum / len);
 }
 
 /**
  * Convert distance to 0-100 score.
- * Calibrated so that:
- *   distance 0 → 100 (perfect)
- *   distance ~1.5 → ~50 (mediocre)
- *   distance ~3+ → ~0 (bad)
+ * Gaussian curve with sigma=1.5 for gentler falloff:
+ *   distance 0   -> 100 (perfect)
+ *   distance 0.5 -> ~95 (excellent)
+ *   distance 1.0 -> ~80 (good)
+ *   distance 1.5 -> ~61 (decent)
+ *   distance 2.0 -> ~41 (needs work)
+ *   distance 3.0 -> ~14 (poor)
  */
 function distToScore(dist) {
-  // Sigmoid-ish mapping
-  const score = 100 * Math.exp(-dist * dist / 2);
+  const sigma = 1.5;
+  const score = 100 * Math.exp(-dist * dist / (2 * sigma * sigma));
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -250,6 +267,52 @@ function dtw(seqA, seqB) {
 }
 
 // ===========================================================
+// Mirroring (left-right swap for dominant hand invariance)
+// ===========================================================
+
+/**
+ * Mirror live frames for left-handed users.
+ * Swaps left/right joints and inverts x-coordinates so that
+ * a left-handed signer matches a right-handed reference.
+ *
+ * Live pose uses 33-point MediaPipe format. We swap:
+ *   leftShoulder(11) <-> rightShoulder(12)
+ *   leftElbow(13) <-> rightElbow(14)
+ *   leftWrist(15) <-> rightWrist(16)
+ *   leftHip(23) <-> rightHip(24)
+ * Then invert all x-coordinates (x -> 1-x, since coords are 0-1 normalised).
+ * Also swap leftHand <-> rightHand.
+ */
+const MIRROR_SWAP_PAIRS = [
+  [11, 12], // shoulders
+  [13, 14], // elbows
+  [15, 16], // wrists
+  [23, 24], // hips
+];
+
+function mirrorLiveFrames(frames) {
+  return frames.map(frame => {
+    let mirroredPose = null;
+    if (frame.pose) {
+      mirroredPose = frame.pose.map(([x, y]) => [1 - x, y]);
+      // Swap left/right joint pairs
+      for (const [l, r] of MIRROR_SWAP_PAIRS) {
+        if (l < mirroredPose.length && r < mirroredPose.length) {
+          const tmp = mirroredPose[l];
+          mirroredPose[l] = mirroredPose[r];
+          mirroredPose[r] = tmp;
+        }
+      }
+    }
+    return {
+      pose: mirroredPose,
+      rightHand: frame.leftHand ? frame.leftHand.map(([x, y]) => [1 - x, y]) : null,
+      leftHand: frame.rightHand ? frame.rightHand.map(([x, y]) => [1 - x, y]) : null,
+    };
+  });
+}
+
+// ===========================================================
 // Public API
 // ===========================================================
 
@@ -299,61 +362,80 @@ function processRefFrames(frames) {
 
 /**
  * Compare recorded user performance against reference.
+ * Tries both original and mirrored orientations, returns the better score.
+ * This handles left-handed signers matching right-handed reference videos.
  *
  * @param {Array} liveFrames - recorded [{pose, rightHand, leftHand}, ...]
  * @param {Array} refFrames - reference [{pose, rightHand, leftHand}, ...]
- * @returns {{ score, pathScores, avgDistance, liveFeatureCount, refFeatureCount }}
+ * @returns {{ score, pathScores, avgDistance, liveFeatureCount, refFeatureCount, mirrored }}
  */
 export function compareDTW(liveFrames, refFrames) {
-  const liveFeats = processLiveFrames(liveFrames);
   const refFeats = processRefFrames(refFrames);
 
-  console.log(`Features: live=${liveFeats.length}, ref=${refFeats.length}`);
+  // Try original orientation
+  const liveFeats = processLiveFrames(liveFrames);
+  // Try mirrored orientation
+  const mirroredFeats = processLiveFrames(mirrorLiveFrames(liveFrames));
 
-  if (liveFeats.length < 2 || refFeats.length < 2) {
+  console.log(`Features: live=${liveFeats.length}, mirrored=${mirroredFeats.length}, ref=${refFeats.length}`);
+
+  const minLive = Math.max(liveFeats.length, mirroredFeats.length);
+  if (minLive < 2 || refFeats.length < 2) {
     return { score: 0, pathScores: [], avgDistance: Infinity,
-             liveFeatureCount: liveFeats.length, refFeatureCount: refFeats.length };
+             liveFeatureCount: liveFeats.length, refFeatureCount: refFeats.length, mirrored: false };
   }
 
-  const result = dtw(liveFeats, refFeats);
+  const resultOriginal = liveFeats.length >= 2 ? dtw(liveFeats, refFeats) : { score: 0 };
+  const resultMirrored = mirroredFeats.length >= 2 ? dtw(mirroredFeats, refFeats) : { score: 0 };
+
+  const useMirrored = resultMirrored.score > resultOriginal.score;
+  const best = useMirrored ? resultMirrored : resultOriginal;
+
+  console.log(`DTW scores: original=${resultOriginal.score}, mirrored=${resultMirrored.score}, using=${useMirrored ? 'mirrored' : 'original'}`);
+
   return {
-    ...result,
+    ...best,
     liveFeatureCount: liveFeats.length,
     refFeatureCount: refFeats.length,
+    mirrored: useMirrored,
   };
 }
 
 /**
- * Generate feedback tips based on DTW results.
+ * Generate encouraging feedback tips based on DTW results.
+ * All language is positive and supportive (designed for Endeavour Foundation participants).
  */
 export function generateFeedback(dtwResult) {
   const tips = [];
   const { score, pathScores } = dtwResult;
 
   if (dtwResult.liveFeatureCount < 3) {
-    return { tips: ["Could not track your pose clearly. Make sure your upper body is visible and well-lit."] };
+    return { tips: ["Let's make sure your upper body is nice and visible. Try stepping back a little!"] };
   }
 
-  if (score >= 80) {
-    tips.push("Great signing! The movement closely matches the reference.");
-  } else if (score >= 60) {
-    // Find which parts were weakest
-    if (pathScores.length > 0) {
+  if (score >= 75) {
+    tips.push("Wonderful signing! Your movement looks great!");
+  } else if (score >= 50) {
+    // Find which parts were strongest to praise
+    if (pathScores && pathScores.length > 0) {
       const firstThird = pathScores.slice(0, Math.floor(pathScores.length / 3));
       const lastThird = pathScores.slice(-Math.floor(pathScores.length / 3));
       const firstAvg = firstThird.reduce((a, b) => a + b, 0) / firstThird.length;
       const lastAvg = lastThird.reduce((a, b) => a + b, 0) / lastThird.length;
 
-      if (firstAvg < lastAvg - 10) {
-        tips.push("The start of your sign needs more practice.");
-      } else if (lastAvg < firstAvg - 10) {
-        tips.push("Focus on finishing the sign clearly.");
+      if (firstAvg > lastAvg + 10) {
+        tips.push("Great start to the sign! Try watching the ending part once more.");
+      } else if (lastAvg > firstAvg + 10) {
+        tips.push("You finished the sign really well! Watch the beginning part once more.");
+      } else {
+        tips.push("Your arm movement was good! Try matching the speed a little more.");
       }
+    } else {
+      tips.push("Nice effort! Try watching the video once more before your next try.");
     }
-    tips.push("Try to match the arm positions and speed more closely.");
   } else {
-    tips.push("Watch the demonstration again and focus on the arm movements.");
-    tips.push("Make sure you're signing at a similar speed to the video.");
+    tips.push("Great try! Watch the video closely and try again.");
+    tips.push("Try to match your arm movements to the video.");
   }
 
   return { tips };

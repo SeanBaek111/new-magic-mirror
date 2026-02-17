@@ -247,9 +247,21 @@
 
 /* Feedback */
 .overlay.feedback { background: rgba(8,8,14,0.92); }
-.feedback .stars { font-size: 42px; margin-bottom: 12px; }
-.feedback .score { font-size: 88px; font-weight: 800; line-height: 1; }
-.feedback .score-label { font-size: 18px; font-weight: 500; margin-top: 10px; margin-bottom: 8px; }
+.feedback .feedback-emoji { font-size: 64px; margin-bottom: 8px; }
+.feedback .stars { font-size: 42px; margin-bottom: 8px; }
+.feedback .tier-label { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+.feedback .tier-message { font-size: 16px; color: rgba(255,255,255,0.6); margin-bottom: 12px; }
+.feedback .growth-badge {
+  display: inline-block;
+  padding: 6px 18px;
+  background: rgba(78,205,196,0.12);
+  border: 1px solid rgba(78,205,196,0.25);
+  border-radius: 20px;
+  font-size: 14px;
+  color: #4ecdc4;
+  margin-bottom: 12px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
 .feedback .score-stats {
   font-size: 13px;
   color: rgba(255,255,255,0.3);
@@ -260,14 +272,14 @@
 
 /* Feedback tips */
 .feedback-tips {
-  margin: 12px 0 20px;
+  margin: 8px 0 16px;
   max-width: 400px;
 }
 .feedback-tips .tip {
   padding: 6px 16px;
   margin: 4px 0;
   background: rgba(255,255,255,0.04);
-  border-left: 2px solid rgba(255,255,255,0.15);
+  border-left: 2px solid rgba(78,205,196,0.3);
   border-radius: 0 6px 6px 0;
   font-size: 13px;
   color: rgba(255,255,255,0.5);
