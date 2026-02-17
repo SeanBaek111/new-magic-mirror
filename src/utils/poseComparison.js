@@ -313,6 +313,39 @@ function mirrorLiveFrames(frames) {
 }
 
 // ===========================================================
+// Motion detection
+// ===========================================================
+
+/**
+ * Compute total motion from a feature sequence.
+ * Sums absolute velocity values (indices 20-23) across all frames.
+ * This measures how much the arms actually moved during the sequence.
+ */
+function computeMotion(featureSeq) {
+  let total = 0;
+  for (const vec of featureSeq) {
+    for (let i = 20; i < 24 && i < vec.length; i++) {
+      total += Math.abs(vec[i]);
+    }
+  }
+  return total;
+}
+
+/**
+ * Apply motion penalty when the user barely moves.
+ * If user motion is less than 30% of reference motion, scale down the score.
+ * Penalty ramps linearly: 0% motion = score * 0.15, 30% motion = no penalty.
+ */
+function applyMotionPenalty(score, liveMotion, refMotion) {
+  if (refMotion < 0.01) return score;
+  const ratio = liveMotion / refMotion;
+  if (ratio >= 0.3) return score;
+  // Linear scale: ratio 0 -> 0.15, ratio 0.3 -> 1.0
+  const scale = 0.15 + (ratio / 0.3) * 0.85;
+  return Math.round(score * scale);
+}
+
+// ===========================================================
 // Public API
 // ===========================================================
 
@@ -390,14 +423,26 @@ export function compareDTW(liveFrames, refFrames) {
 
   const useMirrored = resultMirrored.score > resultOriginal.score;
   const best = useMirrored ? resultMirrored : resultOriginal;
+  const bestLiveFeats = useMirrored ? mirroredFeats : liveFeats;
+
+  // Motion penalty: penalise standing still
+  const refMotion = computeMotion(refFeats);
+  const liveMotion = computeMotion(bestLiveFeats);
+  const motionRatio = refMotion > 0.01 ? liveMotion / refMotion : 1;
+  const rawScore = best.score;
+  const penalisedScore = applyMotionPenalty(rawScore, liveMotion, refMotion);
+  const lowMotion = motionRatio < 0.3;
 
   console.log(`DTW scores: original=${resultOriginal.score}, mirrored=${resultMirrored.score}, using=${useMirrored ? 'mirrored' : 'original'}`);
+  console.log(`Motion: live=${liveMotion.toFixed(2)}, ref=${refMotion.toFixed(2)}, ratio=${motionRatio.toFixed(2)}, raw=${rawScore}, final=${penalisedScore}`);
 
   return {
     ...best,
+    score: penalisedScore,
     liveFeatureCount: liveFeats.length,
     refFeatureCount: refFeats.length,
     mirrored: useMirrored,
+    lowMotion,
   };
 }
 
@@ -407,10 +452,17 @@ export function compareDTW(liveFrames, refFrames) {
  */
 export function generateFeedback(dtwResult) {
   const tips = [];
-  const { score, pathScores } = dtwResult;
+  const { score, pathScores, lowMotion } = dtwResult;
 
   if (dtwResult.liveFeatureCount < 3) {
     return { tips: ["Let's make sure your upper body is nice and visible. Try stepping back a little!"] };
+  }
+
+  // If user barely moved, give a gentle nudge to try the movement
+  if (lowMotion) {
+    tips.push("Try moving your arms along with the video!");
+    tips.push("Watch the video again and copy the arm movements.");
+    return { tips };
   }
 
   if (score >= 75) {
