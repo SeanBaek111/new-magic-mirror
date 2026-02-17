@@ -1,7 +1,6 @@
 # Magic Mirror - Auslan Learning Tool
 
-Sign language learning web app for the QUT Inclusive Technologies Group, designed for use at Endeavour Foundation centres.
-Users watch an Auslan demonstration video, then practise in front of their webcam with real-time pose tracking and scoring.
+Sign language learning web app for the QUT Inclusive Technologies Group, designed for use at Endeavour Foundation centres. Users watch an Auslan demonstration video, then practise in front of their webcam with real-time pose tracking and scoring.
 
 ## Quick Start
 
@@ -14,21 +13,23 @@ Open http://localhost:5173 in Chrome.
 
 ## Features
 
-- **Real-time pose tracking** via MediaPipe (pose + hand landmarks)
-- **DTW-based scoring** with weighted features (arm angles, positions, velocity, finger angles)
-- **Admin page** for adding custom words (no code needed)
-- **IndexedDB storage** for user-added words (video + reference data)
-- **Skeleton overlay** (green=pose, red/blue=hands) during practice
+- Real-time pose tracking via MediaPipe (pose + hand landmarks)
+- DTW-based scoring with weighted features (arm angles, positions, velocity, finger angles)
+- Admin page for adding custom words (no code needed)
+- IndexedDB storage for user-added words (video + reference data)
+- Skeleton overlay (green=pose, red/blue=hands) during practice
 
 ## Adding New Words
 
 ### Option A: Admin Page (recommended)
+
 1. Go to **Manage Words** from the main screen
 2. Upload a sign video, enter the word name and category
 3. Click **Extract Landmarks** (processes in-browser via MediaPipe)
 4. Click **Save Word**
 
 ### Option B: Manual (built-in words)
+
 1. Put the Signbank video in `public/videos/` (e.g. `hello.mp4`)
 2. Extract landmarks using the video processor or Python script
 3. Add entry in `src/words.js`
@@ -77,3 +78,24 @@ Deploy the `dist/` folder to any static host (Vercel, Netlify, GitHub Pages).
 - MediaPipe Tasks Vision (pose + hand landmarker)
 - IndexedDB for persistent storage
 - DTW for temporal alignment scoring
+
+## License
+
+This project's source code is licensed under the [MIT License](LICENSE).
+
+### Video Content
+
+Sign language demonstration videos included in this project are sourced from [Auslan Signbank](https://auslan.org.au/) and are licensed under [Creative Commons BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/). This means:
+
+- **Attribution** - Credit to Auslan Signbank is required
+- **Non-Commercial** - Videos may only be used for non-commercial purposes
+- **No Derivatives** - Videos may not be modified or adapted
+
+These license terms apply only to the video content, not to the application source code.
+
+## Acknowledgements
+
+- [Auslan Signbank](https://auslan.org.au/) (Macquarie University / Monash University) for sign language video resources
+- [QUT Inclusive Technologies Group](https://research.qut.edu.au/inclusivetech/) for research support
+- [Endeavour Foundation](https://endeavour.com.au/) for collaboration and user testing
+- [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/guide) by Google for pose and hand tracking models
