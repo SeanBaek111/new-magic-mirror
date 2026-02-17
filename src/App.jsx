@@ -144,9 +144,6 @@ export default function App() {
                         onClick={() => handleSelectWord(w)}
                       >
                         <span className="word-card-label">{w.label}</span>
-                        {w.source === "custom" && (
-                          <span className="word-card-badge">custom</span>
-                        )}
                       </button>
                     ))}
                   </div>
