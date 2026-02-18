@@ -202,13 +202,27 @@ export default function MagicMirror({ word, onBack }) {
       ctx.fillStyle = "#0c0c14";
       ctx.fillRect(0, 0, w, h);
 
-      // Mirrored webcam
+      // Mirrored webcam (maintain original aspect ratio)
       if (webcamReady && webcamRef.current) {
+        const vw = webcamRef.current.videoWidth || w;
+        const vh = webcamRef.current.videoHeight || h;
+        const videoAspect = vw / vh;
+        const canvasAspect = w / h;
+        let dw, dh, dx, dy;
+        if (videoAspect > canvasAspect) {
+          // Video is wider: fit to width, letterbox top/bottom
+          dw = w; dh = w / videoAspect;
+          dx = 0; dy = (h - dh) / 2;
+        } else {
+          // Video is taller: fit to height, pillarbox left/right
+          dh = h; dw = h * videoAspect;
+          dx = (w - dw) / 2; dy = 0;
+        }
         ctx.save();
         if (phase === PHASE.COUNTDOWN) ctx.globalAlpha = 0.3;
         ctx.translate(w, 0);
         ctx.scale(-1, 1);
-        ctx.drawImage(webcamRef.current, 0, 0, w, h);
+        ctx.drawImage(webcamRef.current, dx, dy, dw, dh);
         ctx.restore();
       }
 
