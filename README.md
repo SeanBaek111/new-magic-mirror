@@ -1,6 +1,6 @@
-# Magic Mirror - Auslan Learning Tool
+# Magic Mirror - Sign Language Learning Tool
 
-Sign language learning web app for the QUT Inclusive Technologies Group, designed for use at Endeavour Foundation centres. Users watch an Auslan demonstration video, then practise in front of their webcam with real-time pose tracking and scoring.
+Sign language learning web app built for the QUT Inclusive Technologies Group. While initially developed for Auslan at Endeavour Foundation centres, the app is language-agnostic and works with any sign language. Upload any sign video, and users can practise in front of their webcam with real-time pose tracking and scoring.
 
 ## Quick Start
 
@@ -30,7 +30,7 @@ Open http://localhost:5173 in Chrome.
 
 ### Option B: Manual (built-in words)
 
-1. Put the Signbank video in `public/videos/` (e.g. `hello.mp4`)
+1. Put the sign video in `public/videos/` (e.g. `hello.mp4`)
 2. Extract landmarks using the video processor or Python script
 3. Add entry in `src/words.js`
 
@@ -38,7 +38,7 @@ Open http://localhost:5173 in Chrome.
 
 ```
 public/
-  videos/              # Auslan Signbank videos (.mp4)
+  videos/              # Sign language demonstration videos (.mp4)
   data/                # Extracted pose reference data (.json)
 src/
   App.jsx              # State-based routing (Select / Practice / Admin)
@@ -58,7 +58,7 @@ src/
 ## User Flow
 
 1. **Select** - Choose a word to learn (built-in + custom)
-2. **Watch** - Original Signbank video plays as demonstration
+2. **Watch** - Demonstration video plays
 3. **Countdown** - 3-2-1 with webcam preview
 4. **Practice** - Webcam mirror mode with real-time skeleton overlay
 5. **Scoring** - DTW comparison against reference
