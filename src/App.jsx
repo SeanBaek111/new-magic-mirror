@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import MagicMirror from "./components/MagicMirror";
 import AdminPage from "./components/AdminPage";
+import DebugMirror from "./components/DebugMirror";
 import { getAllWords, getWord } from "./utils/storage";
 import BUILTIN_WORDS from "./words";
+
+// Debug mode: add ?debug to URL
+const IS_DEBUG = new URLSearchParams(window.location.search).has("debug");
 
 const PAGE = {
   SELECT: "select",
@@ -11,6 +15,8 @@ const PAGE = {
 };
 
 export default function App() {
+  if (IS_DEBUG) return <DebugMirror />;
+
   const [page, setPage] = useState(PAGE.SELECT);
   const [allWords, setAllWords] = useState([]);
   const [selectedWord, setSelectedWord] = useState(null);

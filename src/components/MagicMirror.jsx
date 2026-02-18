@@ -202,22 +202,22 @@ export default function MagicMirror({ word, onBack }) {
       ctx.fillStyle = "#0c0c14";
       ctx.fillRect(0, 0, w, h);
 
-      // Mirrored webcam (maintain original aspect ratio)
+      // Compute webcam viewport (maintain original aspect ratio)
+      const vw = webcamRef.current?.videoWidth || w;
+      const vh = webcamRef.current?.videoHeight || h;
+      const videoAspect = vw / vh;
+      const canvasAspect = w / h;
+      let dw, dh, dx, dy;
+      if (videoAspect > canvasAspect) {
+        dw = w; dh = w / videoAspect;
+        dx = 0; dy = (h - dh) / 2;
+      } else {
+        dh = h; dw = h * videoAspect;
+        dx = (w - dw) / 2; dy = 0;
+      }
+
+      // Mirrored webcam
       if (webcamReady && webcamRef.current) {
-        const vw = webcamRef.current.videoWidth || w;
-        const vh = webcamRef.current.videoHeight || h;
-        const videoAspect = vw / vh;
-        const canvasAspect = w / h;
-        let dw, dh, dx, dy;
-        if (videoAspect > canvasAspect) {
-          // Video is wider: fit to width, letterbox top/bottom
-          dw = w; dh = w / videoAspect;
-          dx = 0; dy = (h - dh) / 2;
-        } else {
-          // Video is taller: fit to height, pillarbox left/right
-          dh = h; dw = h * videoAspect;
-          dx = (w - dw) / 2; dy = 0;
-        }
         ctx.save();
         if (phase === PHASE.COUNTDOWN) ctx.globalAlpha = 0.3;
         ctx.translate(w, 0);
@@ -233,8 +233,10 @@ export default function MagicMirror({ word, onBack }) {
         if (result.pose || result.rightHand || result.leftHand) {
           setDetectedPose(true);
 
-          // Draw skeleton
-          drawLiveSkeleton(ctx, result, w, h, true, {
+          // Draw skeleton in the same viewport as the webcam
+          ctx.save();
+          ctx.translate(dx, dy);
+          drawLiveSkeleton(ctx, result, dw, dh, true, {
             poseColor: "#00ff88",
             handColor: "#ff6b6b",
             leftHandColor: "#6bc5ff",
@@ -242,6 +244,7 @@ export default function MagicMirror({ word, onBack }) {
             handWidth: 2.5,
             dotRadius: 5,
           });
+          ctx.restore();
 
           // Record frame during practice (subsample to ~10fps)
           if (phase === PHASE.PRACTICE) {
