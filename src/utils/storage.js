@@ -172,21 +172,39 @@ async function supaDeleteWord(id) {
 }
 
 // ─── Public API (unchanged interface) ───────────────────────────────
+// If Supabase is configured but fails (e.g. table not created yet),
+// fall back to IndexedDB so the app still works.
 
 export async function getAllWords() {
-  return useSupabase ? supaGetAllWords() : idbGetAllWords();
+  if (useSupabase) {
+    try { return await supaGetAllWords(); }
+    catch (e) { console.warn('Supabase getAllWords failed, falling back to IndexedDB:', e); }
+  }
+  return idbGetAllWords();
 }
 
 export async function getWord(id) {
-  return useSupabase ? supaGetWord(id) : idbGetWord(id);
+  if (useSupabase) {
+    try { return await supaGetWord(id); }
+    catch (e) { console.warn('Supabase getWord failed, falling back to IndexedDB:', e); }
+  }
+  return idbGetWord(id);
 }
 
 export async function saveWord(word) {
-  return useSupabase ? supaSaveWord(word) : idbSaveWord(word);
+  if (useSupabase) {
+    try { return await supaSaveWord(word); }
+    catch (e) { console.warn('Supabase saveWord failed, falling back to IndexedDB:', e); }
+  }
+  return idbSaveWord(word);
 }
 
 export async function deleteWord(id) {
-  return useSupabase ? supaDeleteWord(id) : idbDeleteWord(id);
+  if (useSupabase) {
+    try { return await supaDeleteWord(id); }
+    catch (e) { console.warn('Supabase deleteWord failed, falling back to IndexedDB:', e); }
+  }
+  return idbDeleteWord(id);
 }
 
 export async function getCategories() {
