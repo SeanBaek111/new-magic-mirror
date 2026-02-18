@@ -128,11 +128,13 @@ export default function AdminPage({ onBack }) {
       return;
     }
 
-    const id = wordLabel
+    // Generate ID: keep unicode letters/digits, replace spaces with underscores
+    let id = wordLabel
       .trim()
       .toLowerCase()
-      .replace(/\s+/g, "_")
-      .replace(/[^a-z0-9_]/g, "");
+      .replace(/\s+/g, "_");
+    // Fallback to timestamp if label produces empty ID
+    if (!id) id = `word_${Date.now()}`;
 
     // Check for duplicate
     const existing = await getWord(id);
