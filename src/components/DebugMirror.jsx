@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { drawLiveSkeleton } from "../utils/drawing";
-import { compareDTW, generateFeedback } from "../utils/poseComparison";
+import { compareDTW, generateFeedback, getStarRating } from "../utils/poseComparison";
 import useMediaPipe from "../hooks/useMediaPipe";
 import { getAllWords, getWord } from "../utils/storage";
 import BUILTIN_WORDS from "../words";
@@ -17,6 +17,7 @@ export default function DebugMirror() {
   const [refData, setRefData] = useState(null);
   const [recording, setRecording] = useState(false);
   const [scoreResult, setScoreResult] = useState(null);
+  const [detectionStatus, setDetectionStatus] = useState({ pose: false, rightHand: false, leftHand: false, face: false });
 
   const canvasRef = useRef(null);
   const webcamRef = useRef(null);
@@ -137,6 +138,12 @@ export default function DebugMirror() {
       // MediaPipe detection + skeleton
       if (!mpLoading) {
         const result = detect(webcamRef.current, performance.now());
+        setDetectionStatus({
+          pose: !!result.pose,
+          rightHand: !!result.rightHand,
+          leftHand: !!result.leftHand,
+          face: !!(result.face && result.face.length >= 468),
+        });
         if (result.pose || result.rightHand || result.leftHand) {
           ctx.save();
           ctx.translate(dx, dy);
@@ -160,6 +167,7 @@ export default function DebugMirror() {
                 pose: result.pose?.map(p => [p[0], p[1]]),
                 rightHand: result.rightHand?.map(p => [p[0], p[1]]),
                 leftHand: result.leftHand?.map(p => [p[0], p[1]]),
+                face: result.face,
                 _t: now,
               });
             }
@@ -220,6 +228,12 @@ export default function DebugMirror() {
       <div style={panelStyle}>
         <div style={{ color: "#4ecdc4", marginBottom: 8, fontWeight: 700 }}>DEBUG PANEL</div>
         <div style={{ marginBottom: 4 }}>{fps} FPS {mpLoading ? "(loading...)" : ""} {mpError ? `Error: ${mpError}` : ""}</div>
+        <div style={{ marginBottom: 4, fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
+          Pose: {detectionStatus.pose ? "\u2705" : "\u274C"}{" "}
+          R.Hand: {detectionStatus.rightHand ? "\u2705" : "\u274C"}{" "}
+          L.Hand: {detectionStatus.leftHand ? "\u2705" : "\u274C"}{" "}
+          Face: {detectionStatus.face ? "\u2705" : "\u274C"}
+        </div>
 
         {/* Word selector */}
         <div style={{ marginTop: 8, marginBottom: 4, color: "#4ecdc4" }}>Reference Word:</div>
@@ -265,7 +279,7 @@ export default function DebugMirror() {
                 <div>Mirrored: {scoreResult.mirrored ? "yes" : "no"}</div>
                 <div>Low motion: {scoreResult.lowMotion ? "YES" : "no"}</div>
                 <div style={{ marginTop: 4, color: "#ffe66d" }}>
-                  Tier: {scoreResult.score >= 75 ? "Amazing (3 stars)" : scoreResult.score >= 50 ? "Well Done (2 stars)" : scoreResult.score >= 25 ? "Good Try (1 star)" : "Let's Try Again (heart)"}
+                  Stars: {"★".repeat(getStarRating(scoreResult.score))}{"☆".repeat(3 - getStarRating(scoreResult.score))} ({getStarRating(scoreResult.score)}/3)
                 </div>
                 {scoreResult.feedback?.tips?.map((t, i) => (
                   <div key={i} style={{ marginTop: 2, color: "rgba(255,255,255,0.6)" }}>{t}</div>

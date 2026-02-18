@@ -13,19 +13,35 @@
  *   - Skeleton-based Action Recognition
  *   - Procrustes-style geometric normalization
  *
- * Feature vector per frame:
+ * Feature vector per frame (60 dimensions):
  *   - 4 arm segment angles
  *   - 8 normalized upper body positions (x,y) = 16 values
  *   - 4 arm segment velocities (frame-to-frame angle change)
  *   - 15 finger joint angles per hand (when available)
+ *   - 6 face features: eyebrow height, eye openness, mouth open/width
  */
 
 // ===========================================================
 // Constants
 // ===========================================================
 
-// Fixed feature vector length: 4 arm angles + 16 positions + 4 velocity + 15 right fingers + 15 left fingers = 54
-const FIXED_VECTOR_LENGTH = 54;
+// Fixed feature vector length:
+//   4 arm angles + 16 positions + 4 velocity
+//   + 15 right fingers + 15 left fingers
+//   + 6 face features = 60
+const FIXED_VECTOR_LENGTH = 60;
+
+// Face mesh landmark indices for feature extraction
+// Used to compute eyebrow height, eye openness, mouth openness/width
+const FACE_INDICES = {
+  leftEyeTop: 159, leftEyeBottom: 145,
+  rightEyeTop: 386, rightEyeBottom: 374,
+  leftBrow: 70, rightBrow: 300,
+  leftEyeCenter: 33, rightEyeCenter: 263,
+  upperLip: 13, lowerLip: 14,
+  mouthLeft: 61, mouthRight: 291,
+  chin: 152, forehead: 10,
+};
 
 // Hand finger joint angles: 3 angles per finger × 5 fingers = 15
 // Each entry: [joint_a, joint_b, joint_c] → angle at joint_b
@@ -115,13 +131,36 @@ function extractFingerAngles(hand) {
 }
 
 /**
+ * Extract 6 face features from 478-point face mesh, normalized by face height.
+ * Returns [leftBrowH, rightBrowH, leftEyeOpen, rightEyeOpen, mouthOpen, mouthWidth]
+ * or null if face data is unavailable.
+ */
+function extractFaceFeatures(face) {
+  if (!face || face.length < 468) return null;
+  const F = FACE_INDICES;
+  // Normalize by face height (forehead to chin)
+  const faceH = Math.abs(face[F.chin][1] - face[F.forehead][1]);
+  if (faceH < 0.001) return null;
+  // Eyebrow height relative to eye center
+  const leftBrowH = (face[F.leftEyeCenter][1] - face[F.leftBrow][1]) / faceH;
+  const rightBrowH = (face[F.rightEyeCenter][1] - face[F.rightBrow][1]) / faceH;
+  // Eye openness (vertical gap)
+  const leftEyeOpen = (face[F.leftEyeBottom][1] - face[F.leftEyeTop][1]) / faceH;
+  const rightEyeOpen = (face[F.rightEyeBottom][1] - face[F.rightEyeTop][1]) / faceH;
+  // Mouth openness and width
+  const mouthOpen = (face[F.lowerLip][1] - face[F.upperLip][1]) / faceH;
+  const mouthWidth = Math.abs(face[F.mouthRight][0] - face[F.mouthLeft][0]) / faceH;
+  return [leftBrowH, rightBrowH, leftEyeOpen, rightEyeOpen, mouthOpen, mouthWidth];
+}
+
+/**
  * Build feature vector for a single frame.
  *
- * @param {Object} frame - { pose (normalized subset), rightHand, leftHand }
+ * @param {Object} frame - { pose (normalized subset), rightHand, leftHand, face }
  * @param {Object|null} prevFrame - previous frame for velocity
- * @returns {Object} { armAngles, positions, velocity, rightFingers, leftFingers, vector }
+ * @returns {Object} { armAngles, positions, velocity, rightFingers, leftFingers, faceFeatures, vector }
  */
-function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles) {
+function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles, face) {
   // 1. Arm segment angles (4 values)
   const armAngles = ARM_SEGMENTS.map(([a, b]) => segAngle(normSubset, a, b));
 
@@ -142,8 +181,11 @@ function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles) {
   const rightFingers = extractFingerAngles(rightHand);
   const leftFingers = extractFingerAngles(leftHand);
 
-  // Combined feature vector (always FIXED_VECTOR_LENGTH = 54 dimensions)
-  // Layout: [4 arm angles, 16 positions, 4 velocity, 15 right fingers, 15 left fingers]
+  // 5. Face features (6 values)
+  const faceFeatures = extractFaceFeatures(face);
+
+  // Combined feature vector (FIXED_VECTOR_LENGTH = 60 dimensions)
+  // Layout: [4 arm angles, 16 positions, 4 velocity, 15 right fingers, 15 left fingers, 6 face]
   const vector = [...armAngles, ...positions, ...velocity];
   // Pad right finger slots (indices 24-38): use actual angles or zeros
   if (rightFingers) vector.push(...rightFingers);
@@ -151,55 +193,74 @@ function extractFeatures(normSubset, rightHand, leftHand, prevArmAngles) {
   // Pad left finger slots (indices 39-53): use actual angles or zeros
   if (leftFingers) vector.push(...leftFingers);
   else for (let i = 0; i < 15; i++) vector.push(0);
+  // Pad face feature slots (indices 54-59): use actual features or zeros
+  if (faceFeatures) vector.push(...faceFeatures);
+  else for (let i = 0; i < 6; i++) vector.push(0);
 
-  return { armAngles, positions, velocity, rightFingers, leftFingers, vector };
+  return { armAngles, positions, velocity, rightFingers, leftFingers, faceFeatures, vector };
 }
 
 // ===========================================================
 // Similarity metrics
 // ===========================================================
 
+// Feature vector component layout and importance weights.
+// Only components with actual data contribute to distance,
+// preventing zero-padded dimensions from inflating scores.
+const COMPONENTS = [
+  { start: 0,  end: 4,  weight: 2.5 }, // arm angles
+  { start: 4,  end: 20, weight: 2.0 }, // positions
+  { start: 20, end: 24, weight: 2.0 }, // velocity
+  { start: 24, end: 39, weight: 2.5 }, // right hand fingers
+  { start: 39, end: 54, weight: 2.5 }, // left hand fingers
+  { start: 54, end: 60, weight: 1.0 }, // face features
+];
+
 /**
- * Weighted Euclidean distance between two feature vectors.
- * Different feature types have different scales, so we weight them.
- *
- * Weights tuned for realistic human variance:
- *   - Arm angles (weight 2): natural variance ~0.2-0.3 rad, important but not over-penalised
- *   - Positions (weight 1): normalised coordinates
- *   - Velocity (weight 1.2): dynamics matter, but less than arm shape
- *   - Finger angles (weight 1.5): handshape detail
+ * Component-aware weighted distance between two feature vectors.
+ * Computes per-component RMS, then weighted average of active components.
+ * Components where neither side has data are excluded (no zero-zero inflation).
  */
 function featureDistance(vecA, vecB) {
-  const len = FIXED_VECTOR_LENGTH;
-  let sum = 0;
-  for (let i = 0; i < len; i++) {
-    let weight = 1;
-    if (i < 4) weight = 2;          // arm angles
-    else if (i < 20) weight = 1;    // positions
-    else if (i < 24) weight = 1.2;  // velocity
-    else weight = 1.5;              // finger angles
+  let weightedSum = 0;
+  let totalWeight = 0;
 
-    const a = i < vecA.length ? vecA[i] : 0;
-    const b = i < vecB.length ? vecB[i] : 0;
-    const diff = a - b;
-    sum += weight * diff * diff;
+  for (const comp of COMPONENTS) {
+    let sum = 0;
+    let hasData = false;
+    for (let i = comp.start; i < comp.end; i++) {
+      const a = i < vecA.length ? vecA[i] : 0;
+      const b = i < vecB.length ? vecB[i] : 0;
+      if (a !== 0 || b !== 0) hasData = true;
+      const diff = a - b;
+      sum += diff * diff;
+    }
+    // Skip components where neither side has data
+    if (!hasData) continue;
+    const dims = comp.end - comp.start;
+    weightedSum += comp.weight * Math.sqrt(sum / dims);
+    totalWeight += comp.weight;
   }
 
-  return Math.sqrt(sum / len);
+  if (totalWeight < 0.01) return 0;
+  return weightedSum / totalWeight;
 }
 
 /**
  * Convert distance to 0-100 score.
- * Gaussian curve with sigma=1.5 for gentler falloff:
+ * Gaussian curve with sigma=0.9 for strict falloff:
  *   distance 0   -> 100 (perfect)
- *   distance 0.5 -> ~95 (excellent)
- *   distance 1.0 -> ~80 (good)
- *   distance 1.5 -> ~61 (decent)
- *   distance 2.0 -> ~41 (needs work)
- *   distance 3.0 -> ~14 (poor)
+ *   distance 0.3 -> ~95 (excellent)
+ *   distance 0.5 -> ~86 (great)
+ *   distance 0.7 -> ~73 (good)
+ *   distance 0.9 -> ~58 (decent)
+ *   distance 1.0 -> ~51 (mediocre)
+ *   distance 1.3 -> ~34 (needs work)
+ *   distance 1.5 -> ~24 (poor)
+ *   distance 2.0 -> ~8  (very poor)
  */
 function distToScore(dist) {
-  const sigma = 1.5;
+  const sigma = 0.9;
   const score = 100 * Math.exp(-dist * dist / (2 * sigma * sigma));
   return Math.max(0, Math.min(100, Math.round(score)));
 }
@@ -308,6 +369,7 @@ function mirrorLiveFrames(frames) {
       pose: mirroredPose,
       rightHand: frame.leftHand ? frame.leftHand.map(([x, y]) => [1 - x, y]) : null,
       leftHand: frame.rightHand ? frame.rightHand.map(([x, y]) => [1 - x, y]) : null,
+      face: frame.face, // face features are symmetric ratios, no mirroring needed
     };
   });
 }
@@ -333,17 +395,21 @@ function computeMotion(featureSeq) {
 
 /**
  * Apply motion penalty with hard score caps.
- * Standing still must always result in "Let's Try Again" tier (0-24).
+ * Standing still must always result in 0 stars (0-30).
  *
- *   ratio < 30%  -> score capped at 20  (Let's Try Again)
- *   ratio 30-50% -> score capped at 45  (Good Try at best)
- *   ratio >= 50% -> no cap, normal score
+ * Star tiers: 0 stars (0-30), 1 star (31-60), 2 stars (61-85), 3 stars (86-100)
+ *
+ *   ratio < 30%  -> score capped at 15  (0 stars, barely moved)
+ *   ratio 30-50% -> score capped at 30  (0 stars, not enough movement)
+ *   ratio 50-70% -> score capped at 55  (1 star at best)
+ *   ratio >= 70% -> no cap, normal score
  */
 function applyMotionPenalty(score, liveMotion, refMotion) {
   if (refMotion < 0.01) return score;
   const ratio = liveMotion / refMotion;
-  if (ratio < 0.3) return Math.min(score, 20);
-  if (ratio < 0.5) return Math.min(score, 45);
+  if (ratio < 0.3) return Math.min(score, 15);
+  if (ratio < 0.5) return Math.min(score, 30);
+  if (ratio < 0.7) return Math.min(score, 55);
   return score;
 }
 
@@ -365,7 +431,7 @@ function processLiveFrames(frames) {
     const norm = normalizeSubset(subset);
     if (!norm) continue;
 
-    const feat = extractFeatures(norm, frame.rightHand, frame.leftHand, prevAngles);
+    const feat = extractFeatures(norm, frame.rightHand, frame.leftHand, prevAngles, frame.face);
     features.push(feat.vector);
     prevAngles = feat.armAngles;
   }
@@ -387,7 +453,7 @@ function processRefFrames(frames) {
     const norm = normalizeSubset(subset);
     if (!norm) continue;
 
-    const feat = extractFeatures(norm, frame.rightHand, frame.leftHand, prevAngles);
+    const feat = extractFeatures(norm, frame.rightHand, frame.leftHand, prevAngles, frame.face);
     features.push(feat.vector);
     prevAngles = feat.armAngles;
   }
@@ -449,8 +515,21 @@ export function compareDTW(liveFrames, refFrames) {
 }
 
 /**
+ * Star rating from score.
+ * 0 stars: 0-30, 1 star: 31-60, 2 stars: 61-85, 3 stars: 86-100
+ */
+export function getStarRating(score) {
+  if (score >= 70) return 3;
+  if (score >= 61) return 2;
+  if (score >= 31) return 1;
+  return 0;
+}
+
+/**
  * Generate encouraging feedback tips based on DTW results.
  * All language is positive and supportive (designed for Endeavour Foundation participants).
+ *
+ * Tiers: 0 stars (0-30), 1 star (31-60), 2 stars (61-85), 3 stars (86-100)
  */
 export function generateFeedback(dtwResult) {
   const tips = [];
@@ -467,29 +546,30 @@ export function generateFeedback(dtwResult) {
     return { tips };
   }
 
-  if (score >= 75) {
-    tips.push("Wonderful signing! Your movement looks great!");
-  } else if (score >= 50) {
-    // Find which parts were strongest to praise
+  if (score >= 86) {
+    // 3 stars
+    tips.push("Amazing! Perfect sign!");
+  } else if (score >= 61) {
+    // 2 stars
+    tips.push("Great signing! Almost perfect!");
     if (pathScores && pathScores.length > 0) {
       const firstThird = pathScores.slice(0, Math.floor(pathScores.length / 3));
       const lastThird = pathScores.slice(-Math.floor(pathScores.length / 3));
       const firstAvg = firstThird.reduce((a, b) => a + b, 0) / firstThird.length;
       const lastAvg = lastThird.reduce((a, b) => a + b, 0) / lastThird.length;
-
       if (firstAvg > lastAvg + 10) {
-        tips.push("Great start to the sign! Try watching the ending part once more.");
+        tips.push("Try watching the ending part once more.");
       } else if (lastAvg > firstAvg + 10) {
-        tips.push("You finished the sign really well! Watch the beginning part once more.");
-      } else {
-        tips.push("Your arm movement was good! Try matching the speed a little more.");
+        tips.push("Watch the beginning part once more.");
       }
-    } else {
-      tips.push("Nice effort! Try watching the video once more before your next try.");
     }
+  } else if (score >= 31) {
+    // 1 star
+    tips.push("Good try! You're getting closer.");
+    tips.push("Try matching the speed and shape a little more.");
   } else {
-    tips.push("Great try! Watch the video closely and try again.");
-    tips.push("Try to match your arm movements to the video.");
+    // 0 stars
+    tips.push("Let's try again! Watch the video and copy the movements.");
   }
 
   return { tips };

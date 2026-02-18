@@ -1,13 +1,13 @@
 import { useRef, useState, useCallback, useEffect } from "react";
-import { PoseLandmarker, HandLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { PoseLandmarker, HandLandmarker, FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 /**
- * Hook to initialize and run MediaPipe pose + hand detection.
+ * Hook to initialize and run MediaPipe pose + hand + face detection.
  *
  * Returns:
  *  - loading: boolean (model still loading)
  *  - error: string | null
- *  - detect(videoEl, timestamp): { pose, hands }
+ *  - detect(videoEl, timestamp): { pose, leftHand, rightHand, face }
  *  - cleanup(): void
  */
 export default function useMediaPipe() {
@@ -15,6 +15,7 @@ export default function useMediaPipe() {
   const [error, setError] = useState(null);
   const poseRef = useRef(null);
   const handRef = useRef(null);
+  const faceRef = useRef(null);
   const initRef = useRef(false);
 
   useEffect(() => {
@@ -52,6 +53,18 @@ export default function useMediaPipe() {
           numHands: 2,
         });
 
+        // Face landmarker - 478 face mesh landmarks
+        faceRef.current = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU",
+          },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          outputFaceBlendshapes: false,
+        });
+
         setLoading(false);
       } catch (e) {
         console.error("MediaPipe init failed:", e);
@@ -68,7 +81,7 @@ export default function useMediaPipe() {
    * @returns {{ pose: array|null, leftHand: array|null, rightHand: array|null }}
    */
   const detect = useCallback((video, timestamp) => {
-    const result = { pose: null, leftHand: null, rightHand: null };
+    const result = { pose: null, leftHand: null, rightHand: null, face: null };
 
     if (!video || video.readyState < 2) return result;
 
@@ -77,7 +90,6 @@ export default function useMediaPipe() {
       if (poseRef.current) {
         const poseResult = poseRef.current.detectForVideo(video, timestamp);
         if (poseResult.landmarks && poseResult.landmarks.length > 0) {
-          // Convert to [x, y] arrays (normalized 0-1)
           result.pose = poseResult.landmarks[0].map((lm) => [lm.x, lm.y, lm.z]);
         }
       }
@@ -99,6 +111,14 @@ export default function useMediaPipe() {
           }
         }
       }
+
+      // Face mesh (478 landmarks)
+      if (faceRef.current) {
+        const faceResult = faceRef.current.detectForVideo(video, timestamp);
+        if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
+          result.face = faceResult.faceLandmarks[0].map((lm) => [lm.x, lm.y]);
+        }
+      }
     } catch (e) {
       // Detection can fail on some frames, just skip
     }
@@ -109,6 +129,7 @@ export default function useMediaPipe() {
   const cleanup = useCallback(() => {
     if (poseRef.current) { poseRef.current.close(); poseRef.current = null; }
     if (handRef.current) { handRef.current.close(); handRef.current = null; }
+    if (faceRef.current) { faceRef.current.close(); faceRef.current = null; }
   }, []);
 
   return { loading, error, detect, cleanup };

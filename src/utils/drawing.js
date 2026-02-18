@@ -61,6 +61,46 @@ export const HAND_CONNECTIONS = [
 ];
 
 // ============================================================
+// Face mesh connections (478-point, key regions only)
+// ============================================================
+
+// Lips outer contour
+const FACE_LIPS_OUTER = [
+  [61,146],[146,91],[91,181],[181,84],[84,17],[17,314],[314,405],[405,321],[321,375],[375,291],[291,61],
+];
+// Lips inner contour
+const FACE_LIPS_INNER = [
+  [78,95],[95,88],[88,178],[178,87],[87,14],[14,317],[317,402],[402,318],[318,324],[324,308],[308,78],
+];
+// Left eye
+const FACE_LEFT_EYE = [
+  [33,7],[7,163],[163,144],[144,145],[145,153],[153,154],[154,155],[155,133],[133,173],[173,157],[157,158],[158,159],[159,160],[160,161],[161,246],[246,33],
+];
+// Right eye
+const FACE_RIGHT_EYE = [
+  [362,382],[382,381],[381,380],[380,374],[374,373],[373,390],[390,249],[249,263],[263,466],[466,388],[388,387],[387,386],[386,385],[385,384],[384,398],[398,362],
+];
+// Left eyebrow
+const FACE_LEFT_EYEBROW = [
+  [46,53],[53,52],[52,65],[65,55],[55,107],[107,66],[66,105],[105,63],[63,70],
+];
+// Right eyebrow
+const FACE_RIGHT_EYEBROW = [
+  [276,283],[283,282],[282,295],[295,285],[285,336],[336,296],[296,334],[334,293],[293,300],
+];
+// Face oval
+const FACE_OVAL = [
+  [10,338],[338,297],[297,332],[332,284],[284,251],[251,389],[389,356],[356,454],[454,323],[323,361],[361,288],[288,397],[397,365],[365,379],[379,378],[378,400],[400,377],[377,152],[152,148],[148,176],[176,149],[149,150],[150,136],[136,172],[172,58],[58,132],[132,93],[93,234],[234,127],[127,162],[162,21],[21,54],[54,103],[103,67],[67,109],[109,10],
+];
+
+export const FACE_MESH_CONNECTIONS = [
+  ...FACE_LIPS_OUTER, ...FACE_LIPS_INNER,
+  ...FACE_LEFT_EYE, ...FACE_RIGHT_EYE,
+  ...FACE_LEFT_EYEBROW, ...FACE_RIGHT_EYEBROW,
+  ...FACE_OVAL,
+];
+
+// ============================================================
 // Drawing primitives
 // ============================================================
 
@@ -110,10 +150,17 @@ export function drawLiveSkeleton(ctx, result, w, h, mirror = true, style = {}) {
     poseColor = "#00ff88",
     handColor = "#ff6b6b",
     leftHandColor = "#6bc5ff",
+    faceColor = "#c4a0f5",
     poseWidth = 3,
     handWidth = 2.5,
+    faceWidth = 1.2,
     dotRadius = 5,
   } = style;
+
+  // Face mesh (draw first so body overlays on top)
+  if (result.face && result.face.length >= 468) {
+    drawLines(ctx, result.face, FACE_MESH_CONNECTIONS, w, h, mirror, faceColor, faceWidth);
+  }
 
   if (result.pose) {
     drawLines(ctx, result.pose, MP_UPPER_BODY, w, h, mirror, poseColor, poseWidth);

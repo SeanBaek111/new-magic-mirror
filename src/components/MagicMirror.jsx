@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { drawLiveSkeleton } from "../utils/drawing";
-import { compareDTW, generateFeedback } from "../utils/poseComparison";
+import { compareDTW, generateFeedback, getStarRating } from "../utils/poseComparison";
 import useMediaPipe from "../hooks/useMediaPipe";
 import "./MagicMirror.css";
 
@@ -257,6 +257,7 @@ export default function MagicMirror({ word, onBack }) {
                 pose: result.pose?.map(p => [p[0], p[1]]),
                 rightHand: result.rightHand?.map(p => [p[0], p[1]]),
                 leftHand: result.leftHand?.map(p => [p[0], p[1]]),
+                face: result.face,
                 _t: now,
               });
             }
@@ -302,17 +303,20 @@ export default function MagicMirror({ word, onBack }) {
   };
 
   // Tier-based feedback (no numeric score shown to users)
+  // 0 stars: 0-30, 1 star: 31-60, 2 stars: 61-85, 3 stars: 86-100
   const getTier = (s) => {
-    if (s >= 75) return { emoji: "\u{1F31F}", label: "Amazing!", stars: 3, color: "#4ecdc4" };
-    if (s >= 50) return { emoji: "\u{1F44F}", label: "Well Done!", stars: 2, color: "#ffe66d" };
-    if (s >= 25) return { emoji: "\u{1F4AA}", label: "Good Try!", stars: 1, color: "#f0a86e" };
+    const stars = getStarRating(s);
+    if (stars === 3) return { emoji: "\u{1F31F}", label: "Amazing!", stars: 3, color: "#4ecdc4" };
+    if (stars === 2) return { emoji: "\u{1F44F}", label: "Great Job!", stars: 2, color: "#ffe66d" };
+    if (stars === 1) return { emoji: "\u{1F4AA}", label: "Good Try!", stars: 1, color: "#f0a86e" };
     return { emoji: "\u{1F917}", label: "Let's Try Again!", stars: 0, color: "#e8a0bf" };
   };
 
   const getTierMessages = (s) => {
-    if (s >= 75) return ["Wonderful signing!", "You nailed it!", "Brilliant work!"];
-    if (s >= 50) return ["Great effort!", "You're getting there!", "Looking good!"];
-    if (s >= 25) return ["Nice try! Let's practise again!", "Good start, keep going!", "You're learning!"];
+    const stars = getStarRating(s);
+    if (stars === 3) return ["Perfect sign!", "You nailed it!", "Brilliant work!"];
+    if (stars === 2) return ["Almost perfect!", "Great signing!", "So close to perfect!"];
+    if (stars === 1) return ["You're getting closer!", "Good start, keep going!", "You're learning!"];
     return ["Let's watch the video once more!", "Every try helps you learn!", "You can do it!"];
   };
 

@@ -21,18 +21,10 @@ Open http://localhost:5173 in Chrome.
 
 ## Adding New Words
 
-### Option A: Admin Page (recommended)
-
 1. Go to **Manage Words** from the main screen
 2. Upload a sign video, enter the word name and category
 3. Click **Extract Landmarks** (processes in-browser via MediaPipe)
 4. Click **Save Word**
-
-### Option B: Manual (built-in words)
-
-1. Put the sign video in `public/videos/` (e.g. `hello.mp4`)
-2. Extract landmarks using the video processor or Python script
-3. Add entry in `src/words.js`
 
 ## Project Structure
 

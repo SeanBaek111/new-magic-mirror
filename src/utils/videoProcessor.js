@@ -12,6 +12,7 @@
 import {
   PoseLandmarker,
   HandLandmarker,
+  FaceLandmarker,
   FilesetResolver,
 } from "@mediapipe/tasks-vision";
 
@@ -57,6 +58,17 @@ export async function processVideo(videoFile, onProgress) {
     },
     runningMode: "VIDEO",
     numHands: 2,
+  });
+
+  const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: false,
   });
 
   onProgress?.("Loading video...", 10);
@@ -137,10 +149,22 @@ export async function processVideo(videoFile, onProgress) {
         }
       }
 
+      // Detect face mesh
+      let face = null;
+      const faceResult = faceLandmarker.detectForVideo(video, timestamp);
+      timestamp += 1;
+      if (faceResult.faceLandmarks && faceResult.faceLandmarks.length > 0) {
+        face = faceResult.faceLandmarks[0].map((lm) => [
+          Math.round(lm.x * 10000) / 10000,
+          Math.round(lm.y * 10000) / 10000,
+        ]);
+      }
+
       const frame = { t: Math.round(seekTime * 1000) / 1000 };
       if (pose) frame.pose = pose;
       if (rightHand) frame.rightHand = rightHand;
       if (leftHand) frame.leftHand = leftHand;
+      if (face) frame.face = face;
 
       // Only add frames with at least pose data
       if (pose) {
@@ -157,6 +181,7 @@ export async function processVideo(videoFile, onProgress) {
   // 4. Cleanup
   poseLandmarker.close();
   handLandmarker.close();
+  faceLandmarker.close();
   URL.revokeObjectURL(videoUrl);
 
   onProgress?.("Done!", 100);
