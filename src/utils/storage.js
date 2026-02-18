@@ -5,10 +5,11 @@
  * Fallback: IndexedDB (browser-local)
  *
  * Each word record:
- *   { id, label, category, videoBlob, refData, createdAt }
+ *   { id, label, category, videoBlob?, videoUrl?, refData, createdAt }
  *
- * videoBlob  – the original MP4 file as a Blob
- * refData    – extracted reference JSON (same format as public/data/*.json)
+ * IndexedDB stores videoBlob (Blob) locally.
+ * Supabase stores videos in Storage and returns a public videoUrl.
+ * refData is the extracted reference JSON (same format as public/data/*.json).
  */
 
 import { supabase, useSupabase } from './supabaseClient.js';
@@ -98,18 +99,18 @@ async function idbDeleteWord(id) {
 async function supaGetAllWords() {
   const { data, error } = await supabase
     .from('words')
-    .select('id, label, category, video_path, ref_data_path, created_at')
+    .select('id, name, category, video_url, ref_data, created_at')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
 
   return data.map((w) => ({
     id: w.id,
-    label: w.label,
+    label: w.name,
     category: w.category || 'Uncategorised',
     createdAt: new Date(w.created_at).getTime(),
-    hasVideo: !!w.video_path,
-    hasRef: !!w.ref_data_path,
+    hasVideo: !!w.video_url,
+    hasRef: !!w.ref_data,
   }));
 }
 
@@ -123,80 +124,48 @@ async function supaGetWord(id) {
   if (error) throw error;
   if (!data) return null;
 
-  let videoBlob = null;
-  if (data.video_path) {
-    const { data: videoData, error: videoErr } = await supabase.storage
-      .from('videos')
-      .download(data.video_path);
-    if (videoErr) throw videoErr;
-    videoBlob = videoData;
-  }
-
-  let refData = null;
-  if (data.ref_data_path) {
-    const { data: refBlob, error: refErr } = await supabase.storage
-      .from('ref-data')
-      .download(data.ref_data_path);
-    if (refErr) throw refErr;
-    refData = JSON.parse(await refBlob.text());
-  }
-
   return {
     id: data.id,
-    label: data.label,
+    label: data.name,
     category: data.category || 'Uncategorised',
     createdAt: new Date(data.created_at).getTime(),
-    videoBlob,
-    refData,
+    videoUrl: data.video_url || null,
+    refData: data.ref_data || null,
   };
 }
 
 async function supaSaveWord(word) {
-  const videoPath = `${word.id}.mp4`;
-  const refPath = `${word.id}.json`;
+  let videoUrl = null;
 
   if (word.videoBlob) {
+    const videoPath = `${word.id}.mp4`;
     const { error: vErr } = await supabase.storage
       .from('videos')
       .upload(videoPath, word.videoBlob, { upsert: true, contentType: 'video/mp4' });
     if (vErr) throw vErr;
-  }
 
-  if (word.refData) {
-    const refBlob = new Blob([JSON.stringify(word.refData)], { type: 'application/json' });
-    const { error: rErr } = await supabase.storage
-      .from('ref-data')
-      .upload(refPath, refBlob, { upsert: true, contentType: 'application/json' });
-    if (rErr) throw rErr;
+    const { data: urlData } = supabase.storage.from('videos').getPublicUrl(videoPath);
+    videoUrl = urlData.publicUrl;
   }
 
   const row = {
     id: word.id,
-    label: word.label,
+    name: word.label,
     category: word.category || 'Uncategorised',
-    video_path: word.videoBlob ? videoPath : null,
-    ref_data_path: word.refData ? refPath : null,
+    video_url: videoUrl,
+    ref_data: word.refData || null,
   };
 
   const { error } = await supabase.from('words').upsert(row);
   if (error) throw error;
 
-  return { ...word, createdAt: word.createdAt || Date.now() };
+  return { ...word, videoUrl, createdAt: word.createdAt || Date.now() };
 }
 
 async function supaDeleteWord(id) {
-  const { data } = await supabase
-    .from('words')
-    .select('video_path, ref_data_path')
-    .eq('id', id)
-    .single();
-
-  if (data?.video_path) {
-    await supabase.storage.from('videos').remove([data.video_path]);
-  }
-  if (data?.ref_data_path) {
-    await supabase.storage.from('ref-data').remove([data.ref_data_path]);
-  }
+  // Delete video from Storage
+  const videoPath = `${id}.mp4`;
+  await supabase.storage.from('videos').remove([videoPath]);
 
   const { error } = await supabase.from('words').delete().eq('id', id);
   if (error) throw error;

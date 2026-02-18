@@ -22,7 +22,7 @@ export default function App() {
   const [selectedWord, setSelectedWord] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load all words (built-in + custom from IndexedDB)
+  // Load all words (built-in + custom from storage)
   const loadAllWords = useCallback(async () => {
     setLoading(true);
     try {
@@ -70,18 +70,18 @@ export default function App() {
     } else {
       try {
         const full = await getWord(word.id);
-        if (!full || !full.videoBlob || !full.refData) {
+        if (!full || (!full.videoBlob && !full.videoUrl) || !full.refData) {
           alert("This word is missing video or reference data.");
           return;
         }
-        const videoUrl = URL.createObjectURL(full.videoBlob);
+        const videoUrl = full.videoUrl || URL.createObjectURL(full.videoBlob);
         setSelectedWord({
           id: full.id,
           label: full.label,
           videoPath: videoUrl,
           refData: full.refData,
           source: "custom",
-          _blobUrl: videoUrl,
+          _blobUrl: full.videoBlob ? videoUrl : null,
         });
         setPage(PAGE.PRACTICE);
       } catch (e) {

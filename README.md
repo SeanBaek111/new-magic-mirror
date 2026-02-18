@@ -11,6 +11,8 @@ npm run dev
 
 Open http://localhost:5173 in Chrome.
 
+Without any Supabase configuration, the app stores custom words in the browser's IndexedDB (local-only, no account required).
+
 ## Features
 
 - Real-time pose tracking via MediaPipe (pose + hand landmarks)
@@ -45,6 +47,7 @@ src/
     poseComparison.js  # DTW + feature extraction + scoring
     videoProcessor.js  # Video to reference data extraction (browser)
     storage.js         # Word CRUD (Supabase or IndexedDB fallback)
+    supabaseClient.js  # Supabase client singleton
 ```
 
 ## User Flow
@@ -58,40 +61,53 @@ src/
 
 ## Supabase Setup (Optional)
 
-By default, the app stores custom words in the browser's IndexedDB. To enable cross-device storage via Supabase:
+To enable cross-device word storage via Supabase:
 
-1. Create a [Supabase](https://supabase.com/) project
+### 1. Create a Supabase project
 
-2. Run this SQL in the Supabase SQL Editor to create the `words` table:
+Sign up at [supabase.com](https://supabase.com/) and create a new project.
 
-```sql
-create table words (
-  id text primary key,
-  label text not null,
-  category text default 'Uncategorised',
-  video_path text,
-  ref_data_path text,
-  created_at timestamptz default now()
-);
+### 2. Create the database table
 
-alter table words enable row level security;
-create policy "Public access" on words for all using (true) with check (true);
-```
+Run the SQL from [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor. This creates:
 
-3. Create two **public** Storage buckets in the Supabase dashboard:
-   - `videos` -- for sign video files
-   - `ref-data` -- for extracted landmark JSON
+- `words` table with columns: `id`, `name`, `category`, `video_url`, `ref_data` (jsonb), `created_at`
+- Row Level Security policies for public access via anon key
 
-4. Copy `.env.example` to `.env` and fill in your project credentials:
+### 3. Create a Storage bucket
+
+In the Supabase dashboard under **Storage**:
+
+1. Create a bucket named **`videos`**
+2. Set it to **Public** (so video URLs are directly accessible)
+
+### 4. Configure environment variables
+
+Copy `.env.example` to `.env` and fill in your Supabase credentials:
 
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-Without these env vars, the app falls back to IndexedDB automatically.
+These values are found in **Project Settings > API** in the Supabase dashboard.
+
+### Local-only mode (no Supabase)
+
+Without these env vars, the app automatically falls back to IndexedDB. All features work the same -- data is just stored in the browser and won't sync across devices.
 
 ## Deployment
+
+### GitHub Pages (automatic)
+
+The repository includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) that automatically builds and deploys to GitHub Pages on every push to `main`.
+
+To connect Supabase in the deployed app, add these as **Repository Secrets** in GitHub (**Settings > Secrets and variables > Actions**):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+### Manual deployment
 
 ```bash
 npm run build

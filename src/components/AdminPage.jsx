@@ -27,7 +27,7 @@ export default function AdminPage({ onBack }) {
 
   const fileInputRef = useRef(null);
 
-  // Load custom words from IndexedDB
+  // Load custom words from storage
   const loadWords = useCallback(async () => {
     try {
       const words = await getAllWords();
@@ -113,7 +113,7 @@ export default function AdminPage({ onBack }) {
     }
   };
 
-  // Save word to IndexedDB
+  // Save word to storage
   const handleSave = async () => {
     if (!wordLabel.trim()) {
       setError("Please enter a word label.");
@@ -348,7 +348,7 @@ export default function AdminPage({ onBack }) {
               </div>
             ))}
 
-            {/* Custom words from IndexedDB */}
+            {/* Custom words */}
             {loading && (
               <div className="word-list-empty">Loading...</div>
             )}
