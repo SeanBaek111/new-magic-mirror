@@ -116,7 +116,7 @@ export default function App() {
       <div className="ambient idle" />
       <div className="select-content">
         <div className="select-header">
-          <div className="subtitle">AUSLAN LEARNING TOOL</div>
+          <div className="subtitle">SIGN LANGUAGE LEARNING TOOL</div>
           <h1>MAGIC MIRROR</h1>
           <p className="select-hint">Choose a sign to learn</p>
         </div>

@@ -330,7 +330,7 @@ export default function MagicMirror({ word, onBack }) {
       <div className={`ambient ${phase === PHASE.PRACTICE ? "active" : "idle"}`} />
       <div className="content">
         <div className="mirror-header">
-          <div className="subtitle">AUSLAN LEARNING TOOL</div>
+          <div className="subtitle">SIGN LANGUAGE LEARNING TOOL</div>
           <h1>MAGIC MIRROR</h1>
         </div>
 
