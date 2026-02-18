@@ -16,7 +16,7 @@ Open http://localhost:5173 in Chrome.
 - Real-time pose tracking via MediaPipe (pose + hand landmarks)
 - DTW-based scoring with weighted features (arm angles, positions, velocity, finger angles)
 - Admin page for adding custom words (no code needed)
-- IndexedDB storage for user-added words (video + reference data)
+- Supabase backend for cross-device word storage (with IndexedDB fallback)
 - Skeleton overlay (green=pose, red/blue=hands) during practice
 
 ## Adding New Words
@@ -44,7 +44,7 @@ src/
     drawing.js         # Skeleton rendering on canvas
     poseComparison.js  # DTW + feature extraction + scoring
     videoProcessor.js  # Video to reference data extraction (browser)
-    storage.js         # IndexedDB CRUD for custom words
+    storage.js         # Word CRUD (Supabase or IndexedDB fallback)
 ```
 
 ## User Flow
@@ -55,6 +55,41 @@ src/
 4. **Practice** - Webcam mirror mode with real-time skeleton overlay
 5. **Scoring** - DTW comparison against reference
 6. **Feedback** - Score, stars, tips, retry option
+
+## Supabase Setup (Optional)
+
+By default, the app stores custom words in the browser's IndexedDB. To enable cross-device storage via Supabase:
+
+1. Create a [Supabase](https://supabase.com/) project
+
+2. Run this SQL in the Supabase SQL Editor to create the `words` table:
+
+```sql
+create table words (
+  id text primary key,
+  label text not null,
+  category text default 'Uncategorised',
+  video_path text,
+  ref_data_path text,
+  created_at timestamptz default now()
+);
+
+alter table words enable row level security;
+create policy "Public access" on words for all using (true) with check (true);
+```
+
+3. Create two **public** Storage buckets in the Supabase dashboard:
+   - `videos` -- for sign video files
+   - `ref-data` -- for extracted landmark JSON
+
+4. Copy `.env.example` to `.env` and fill in your project credentials:
+
+```
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+Without these env vars, the app falls back to IndexedDB automatically.
 
 ## Deployment
 
@@ -68,7 +103,7 @@ Deploy the `dist/` folder to any static host (Vercel, Netlify, GitHub Pages).
 
 - Vite + React 19
 - MediaPipe Tasks Vision (pose + hand landmarker)
-- IndexedDB for persistent storage
+- Supabase for cloud storage (optional, falls back to IndexedDB)
 - DTW for temporal alignment scoring
 
 ## License
